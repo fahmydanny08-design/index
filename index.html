@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hungry Usagi Game</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #f7f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: #fffae6;
+            display: block;
+        }
+        .ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 24px;
+            font-weight: bold;
+            color: #4a4a4a;
+            pointer-events: none;
+        }
+        #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            display: none;
+        }
+        h1 { color: #ff6b6b; margin-bottom: 10px; font-size: 42px;}
+        button {
+            padding: 12px 28px;
+            font-size: 18px;
+            font-weight: bold;
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        button:hover { transform: scale(1.05); }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div class="ui-overlay">
+        <div id="score-display">Score: 0</div>
+        <div id="lives-display">❤️❤️❤️</div>
+    </div>
+    
+    <div id="game-over-screen">
+        <h1 id="game-title">HUNGRY USAGI</h1>
+        <p id="final-score" style="font-size: 20px; margin-bottom: 20px;"></p>
+        <button id="start-btn" onclick="resetGame()">PLAY</button>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const gameOverScreen = document.getElementById('game-over-screen');
+    const scoreDisplay = document.getElementById('score-display');
+    const livesDisplay = document.getElementById('lives-display');
+    const finalScore = document.getElementById('final-score');
+    const startBtn = document.getElementById('start-btn');
+    const gameTitle = document.getElementById('game-title');
+
+    let gameActive = false;
+    let score = 0;
+    let lives = 3;
+    let foodItems = [];
+    let spawnTimer = 0;
+    let speedMultiplier = 1;
+
+    // Usagi Player Object
+    const usagi = {
+        x: canvas.width / 2,
+        y: canvas.height - 80,
+        radius: 30,
+        speed: 8,
+        movingLeft: false,
+        movingRight: false
+    };
+
+    // Keyboard Listeners
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'a') usagi.movingLeft = true;
+        if (e.key === 'ArrowRight' || e.key === 'd') usagi.movingRight = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'a') usagi.movingLeft = false;
+        if (e.key === 'ArrowRight' || e.key === 'd') usagi.movingRight = false;
+    });
+
+    // Touch Support for Mobile
+    window.addEventListener('touchmove', (e) => {
+        if(!gameActive) return;
+        const rect = canvas.getBoundingClientRect();
+        const root = document.documentElement;
+        const touchX = e.touches[0].clientX - rect.left - root.scrollLeft;
+        usagi.x = Math.max(usagi.radius, Math.min(canvas.width - usagi.radius, touchX));
+    });
+
+    function spawnFood() {
+        const types = [
+            { color: '#ff6b6b', points: 10, type: 'strawberry', radius: 12 },
+            { color: '#ffbe76', points: 15, type: 'carrot', radius: 10 },
+            { color: '#2ed573', points: -20, type: 'broccoli', radius: 14 } // Bad food!
+        ];
+        
+        // Randomly pick type skewed towards good food
+        const rand = Math.random();
+        let selectedType = types[0];
+        if (rand > 0.6 && rand <= 0.85) selectedType = types[1];
+        if (rand > 0.85) selectedType = types[2];
+
+        foodItems.push({
+            x: Math.random() * (canvas.width - 40) + 20,
+            y: -20,
+            speed: (Math.random() * 3 + 2) * speedMultiplier,
+            ...selectedType
+        });
+    }
+
+    function drawUsagi() {
+        ctx.save();
+        ctx.translate(usagi.x, usagi.y);
+
+        // Ears
+        ctx.fillStyle = '#fce492'; // Usagi's yellow tint tone
+        ctx.beginPath(); ctx.ellipse(-12, -35, 8, 22, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(12, -35, 8, 22, 0, 0, Math.PI * 2); ctx.fill();
+        // Inner ears
+        ctx.fillStyle = '#ffccd5';
+        ctx.beginPath(); ctx.ellipse(-12, -35, 4, 15, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(12, -35, 4, 15, 0, 0, Math.PI * 2); ctx.fill();
+
+        // Head/Body
+        ctx.fillStyle = '#fce492';
+        ctx.beginPath(); ctx.arc(0, 0, usagi.radius, 0, Math.PI * 2); ctx.fill();
+
+        // Eyes (Classic wide Chiikawa eyes)
+        ctx.fillStyle = '#333';
+        ctx.beginPath(); ctx.arc(-10, -5, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(10, -5, 4, 0, Math.PI * 2); ctx.fill();
+
+        // Cheeks
+        ctx.fillStyle = '#ff8a8a';
+        ctx.beginPath(); ctx.arc(-18, 5, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(18, 5, 5, 0, Math.PI * 2); ctx.fill();
+
+        // Open hungry mouth
+        ctx.fillStyle = '#800000';
+        ctx.beginPath(); ctx.arc(0, 8, 8, 0, Math.PI); ctx.fill();
+
+        ctx.restore();
+    }
+
+    function drawFood() {
+        foodItems.forEach(item => {
+            ctx.fillStyle = item.color;
+            ctx.beginPath();
+            if(item.type === 'carrot') {
+                // Draw a simple triangle-like shape for carrot
+                ctx.moveTo(item.x, item.y + item.radius);
+                ctx.lineTo(item.x - item.radius, item.y - item.radius);
+                ctx.lineTo(item.x + item.radius, item.y - item.radius);
+            } else {
+                ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
+            }
+            ctx.fill();
+        });
+    }
+
+    function update() {
+        if (!gameActive) return;
+
+        // Player Movement
+        if (usagi.movingLeft && usagi.x > usagi.radius) usagi.x -= usagi.speed;
+        if (usagi.movingRight && usagi.x < canvas.width - usagi.radius) usagi.x += usagi.speed;
+
+        // Spawn Mechanics
+        spawnTimer++;
+        if (spawnTimer > Math.max(20, 50 - score/10)) { 
+            spawnFood();
+            spawnTimer = 0;
+        }
+
+        // Increase speed gradually
+        speedMultiplier = 1 + (score / 300);
+
+        // Update Food Positions & Collision Checks
+        for (let i = foodItems.length - 1; i >= 0; i--) {
+            let item = foodItems[i];
+            item.y += item.speed;
+
+            // Distance check for collision
+            let dist = Math.hypot(item.x - usagi.x, item.y - usagi.y);
+            
+            if (dist < usagi.radius + item.radius) {
+                // Eaten!
+                score += item.points;
+                if(score < 0) score = 0;
+                
+                if (item.type === 'broccoli') {
+                    // Punished for eating healthy food (Usagi style!)
+                    lives--;
+                }
+                foodItems.splice(i, 1);
+                updateUI();
+                continue;
+            }
+
+            // Missed item falling off the screen
+            if (item.y > canvas.height + 20) {
+                if (item.type !== 'broccoli') {
+                    lives--; // Lose life for missing sweets/carrots
+                }
+                foodItems.splice(i, 1);
+                updateUI();
+            }
+        }
+
+        if (lives <= 0) endGame();
+    }
+
+    function updateUI() {
+        scoreDisplay.innerText = `Score: ${score}`;
+        livesDisplay.innerText = '❤️'.repeat(Math.max(0, lives)) || '☠️';
+    }
+
+    function endGame() {
+        gameActive = false;
+        gameOverScreen.style.display = 'flex';
+        gameTitle.innerText = "GAME OVER";
+        finalScore.innerText = `Usagi managed a score of: ${score}`;
+        startBtn.innerText = "TRY AGAIN";
+    }
+
+    function resetGame() {
+        score = 0;
+        lives = 3;
+        foodItems = [];
+        spawnTimer = 0;
+        speedMultiplier = 1;
+        usagi.x = canvas.width / 2;
+        gameActive = true;
+        gameOverScreen.style.display = 'none';
+        updateUI();
+    }
+
+    function gameLoop() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        update();
+        drawUsagi();
+        drawFood();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // Show initial start screen state
+    gameOverScreen.style.display = 'flex';
+    gameLoop();
+</script>
+</body>
+</html>
